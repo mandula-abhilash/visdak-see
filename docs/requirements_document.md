@@ -226,7 +226,7 @@ The system will be built on a Bolt framework foundation with the following key c
 **5.2.1 Server Architecture**
 
 - Node.js-based implementation must be used for MCP server
-- Type safety must be ensured through TypeScript
+- Must use only Javascript
 - API gateway pattern must manage external communications
 - Request validation middleware must be implemented
 
