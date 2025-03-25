@@ -1,0 +1,29 @@
+{
+  "name": "visdak-see",
+  "version": "1.0.0",
+  "description": "VISDAK Service Execution Engine (SEE) is a real-time AI-driven system that understands user intent and executes service-related actions seamlessly",
+  "main": "index.js",
+  "type": "module",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "mcp:dev": "cd packages/mcp-server && npm run dev",
+    "mcp:start": "cd packages/mcp-server && npm start",
+    "mcp:test": "cd packages/mcp-server && npm test"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mandula-abhilash/visdak-see.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/mandula-abhilash/visdak-see/issues"
+  },
+  "homepage": "https://github.com/mandula-abhilash/visdak-see#readme"
+}
