@@ -1,78 +1,115 @@
 import { Anthropic } from "@anthropic-ai/sdk";
 import { RateLimiterMemory } from "rate-limiter-flexible";
 import logger from "../utils/logger.js";
+import { buildSecurePrompt } from "./prompts/templates.js";
+import config from "../config/env.js";
 
+// Rate limiter configuration
 const rateLimiter = new RateLimiterMemory({
-  points: 50, // Number of requests
-  duration: 60, // Per minute
+  points: config.rateLimiting.maxRequests,
+  duration: config.rateLimiting.windowMs / 1000, // Convert ms to seconds
 });
 
+// Create Claude client with validation
 const createClaudeClient = () => {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error("ANTHROPIC_API_KEY is required");
-  }
-
-  if (!process.env.CLAUDE_MODEL) {
-    throw new Error("CLAUDE_MODEL is required");
-  }
-
   return new Anthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY,
+    apiKey: config.anthropicApiKey,
   });
 };
 
-const buildSystemPrompt = (context) => {
-  return `You are a helpful assistant for a local service booking platform. 
-  Your role is to understand user queries about local services and help them find and book appropriate service providers.
-  
-  Current user context:
-  - Location: ${context.location || "Unknown"}
-  - Previous services: ${context.previousServices || "None"}
-  - Preferences: ${context.preferences || "None"}`;
+// Parse JSON response from Claude
+const parseClaudeResponse = (response) => {
+  try {
+    return JSON.parse(response);
+  } catch (error) {
+    logger.error("Failed to parse Claude response as JSON:", {
+      error: error.message,
+      response,
+    });
+    return {
+      queryType: "ERROR",
+      understanding: "Failed to parse response",
+      missingInfo: [],
+      nextAction: "Retry query",
+      response:
+        "I apologize, but I encountered an error processing your request. Could you please try again?",
+    };
+  }
 };
 
-const extractIntent = (response) => {
-  // Extract structured intent from Claude's response
-  // This will be expanded based on your specific needs
-  return {
-    type: "search", // or 'book', 'inquire', etc.
-    service: "",
-    parameters: {},
-  };
-};
-
+// Process user query with context management
 const processQuery = async (query, context = {}) => {
   try {
-    // Rate limiting
+    // Apply rate limiting
     await rateLimiter.consume("claude-api");
 
     const client = createClaudeClient();
-    const systemPrompt = buildSystemPrompt(context);
 
+    // Build secure prompt with context
+    const { system, userInput } = buildSecurePrompt(
+      "systemBase",
+      query,
+      context
+    );
+
+    // Send request to Claude
     const response = await client.messages.create({
       model: process.env.CLAUDE_MODEL,
       max_tokens: 1024,
-      system: systemPrompt,
+      system,
       messages: [
         {
           role: "user",
-          content: query,
+          content: userInput,
         },
       ],
     });
 
+    // Parse the JSON response
+    const parsedResponse = parseClaudeResponse(response.content[0].text);
+
+    // Log successful query
+    logger.info("Query processed successfully", {
+      query: userInput,
+      context: JSON.stringify(context),
+    });
+
     return {
-      response: response.content,
-      intent: extractIntent(response),
+      response: parsedResponse,
+      context: {
+        ...context,
+        lastQuery: userInput,
+        lastResponse: parsedResponse,
+      },
     };
   } catch (error) {
+    // Handle specific error types
     if (error.name === "RateLimiterError") {
       logger.warn("Rate limit exceeded for Claude API");
       throw new Error("Too many requests. Please try again later.");
     }
 
-    logger.error("Error processing Claude query:", error);
-    throw error;
+    if (error.status === 401) {
+      logger.error("Authentication failed with Claude API");
+      throw new Error("Failed to authenticate with AI service");
+    }
+
+    if (error.status === 429) {
+      logger.warn("Claude API rate limit exceeded");
+      throw new Error(
+        "Service is temporarily busy. Please try again in a moment."
+      );
+    }
+
+    // Log and handle unexpected errors
+    logger.error("Error processing Claude query:", {
+      error: error.message,
+      stack: error.stack,
+      query,
+      context: JSON.stringify(context),
+    });
+
+    throw new Error("Failed to process your request. Please try again.");
   }
 };
 

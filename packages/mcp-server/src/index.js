@@ -6,9 +6,9 @@ import { errorHandler } from "./middleware/errorHandler.js";
 import { requestValidator } from "./middleware/requestValidator.js";
 import logger from "./utils/logger.js";
 import routes from "./routes/index.js";
+import config from "./config/env.js";
 
 const app = express();
-const port = process.env.PORT || 3000;
 
 // Middleware
 app.use(helmet());
@@ -38,8 +38,8 @@ app.use(errorHandler);
 // Start server
 const startServer = async () => {
   try {
-    app.listen(port, () => {
-      logger.info(`MCP Server listening on port ${port}`);
+    app.listen(config.port, () => {
+      logger.info(`MCP Server listening on port ${config.port}`);
     });
   } catch (error) {
     logger.error("Failed to start server:", error);
