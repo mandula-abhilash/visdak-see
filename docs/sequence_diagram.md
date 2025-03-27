@@ -2,139 +2,188 @@
 
 ```mermaid
 sequenceDiagram
-    participant User
-    participant App as Client App
-    participant API as API Gateway
-    participant Claude
-    participant MCP as MCP Server
-    participant SearchSvc as Search Service
-    participant BizSvc as Business Service
-    participant SchedSvc as Scheduler Service
-    participant TxnSvc as Transaction Service
-    participant NotifSvc as Notification Service
+    participant U as User
+    participant E as Express Server
+    participant S as MCP Server
+    participant SD as Session Manager
+    participant ID as Intent Detection Tool
+    participant DV as Query Validator
+    participant FP as Fetch Providers Tool
+    participant FS as Filter & Sort Tool
+    participant PR as Prompt Generator
+    participant BP as Book Provider Tool
 
-    %% Search Flow
-    User->>App: "I need a plumber tomorrow afternoon"
-    App->>API: Send user query
-    API->>Claude: Process natural language query
-    Claude->>MCP: Request local plumbers data
-    MCP->>SearchSvc: Search for plumbers in user's location
-    SearchSvc-->>MCP: Return matching businesses
-    MCP->>BizSvc: Get business details for matches
-    BizSvc-->>MCP: Return business details
-    MCP->>SchedSvc: Check availability for tomorrow afternoon
-    SchedSvc-->>MCP: Return available time slots
-    MCP-->>Claude: Consolidated business & availability data
-    Claude-->>API: Formatted response with options
-    API-->>App: Display plumber options to user
-    App-->>User: "I found 3 plumbers available..."
-
-    %% Booking Flow
-    User->>App: "Book ABC Plumbing at 2pm"
-    App->>API: Send booking request
-    API->>Claude: Process booking intent
-    Claude->>MCP: Request appointment booking
-    MCP->>SchedSvc: Reserve 2pm slot with ABC Plumbing
-    SchedSvc-->>MCP: Confirm slot is available
-    MCP->>TxnSvc: Create booking transaction
-    TxnSvc-->>MCP: Return booking details
-    MCP->>NotifSvc: Send confirmation notifications
-    NotifSvc-->>MCP: Notifications sent
-    MCP-->>Claude: Booking confirmation details
-    Claude-->>API: Format confirmation message
-    API-->>App: Display booking confirmation
-    App-->>User: "Your appointment is confirmed..."
-
-    %% Optional Payment Flow
-    User->>App: "Add payment method"
-    App->>API: Send payment details
-    API->>TxnSvc: Process payment information
-    TxnSvc-->>API: Payment method saved
-    API-->>App: Confirm payment setup
-    App-->>User: "Payment method added"
+    U->>E: "I would like to book a plumber"
+    E->>S: Forward query (with session ID)
+    S->>SD: Retrieve session context
+    SD-->>S: Return session summary
+    S->>ID: Call 'detect-intent' with query
+    ID-->>S: Return intent "booking:plumber"
+    S->>DV: Validate query (check location, syntax)
+    DV-->>S: Query is valid (Beeramguda confirmed)
+    S->>FP: Call 'fetch-providers' for location Beeramguda
+    FP-->>S: Return list of available plumbers
+    S->>FS: Filter & sort providers (by availability, reviews)
+    FS-->>S: Return top 3 providers (e.g., A, B, C)
+    S->>PR: Generate response with options & clarifying questions
+    PR-->>S: Return formatted response message
+    S->>E: Send response to user:
+    E->>U: "We found 3 plumbers available: Plumber A (10AM), Plumber B (11AM), Plumber C (12PM). Would you like to book one? Please specify your preferred time."
+    U->>E: "I choose Plumber B at 11AM"
+    E->>S: Forward booking confirmation details
+    S->>BP: Call 'book-provider' with Plumber B and time slot 11AM
+    BP-->>S: Confirm booking (update DB, send notifications)
+    S->>PR: Generate final confirmation message
+    PR-->>S: Return confirmation message
+    S->>E: Send final confirmation to user
+    E->>U: "Your appointment with Plumber B at 11AM is confirmed."
 ```
 
-I've created a sequence diagram showing the flow of information between system components for two main user journeys:
+### Detailed Explanation of Each Component and Step
 
-## Main Sequences
+#### **1. User Initiates the Process**
 
-### 1. Search and Discovery Sequence
+- **User (U):**  
+  The conversation starts when a user sends a message like,  
+  _"I would like to book a plumber."_  
+  This is the initial request from the customer.
 
-This flow shows what happens when a user asks for a service:
+#### **2. Express Server Receives the Request**
 
-1. User submits a natural language query ("I need a plumber tomorrow afternoon")
-2. The query passes through the client app to Claude via the API gateway
-3. Claude analyzes the intent and requests relevant data through the MCP server
-4. MCP coordinates with multiple services:
-   - Search Service to find relevant businesses
-   - Business Service to get detailed information
-   - Scheduler Service to check availability
-5. Results flow back to Claude, which formats them conversationally
-6. The user receives a natural language response with options
+- **Express Server (E):**  
+  Acts as the entry point for all user messages. It receives the query along with a session ID (a unique identifier for the ongoing conversation) and forwards it to the MCP Server.
 
-### 2. Booking Sequence
+#### **3. Session Context Management**
 
-This flow shows the transaction process:
+- **MCP Server (S) → Session Manager (SD):**  
+  Before processing the query, the MCP Server asks the Session Manager to retrieve the session context.
+  - **Session Manager (SD):**  
+    Maintains a brief summary of the conversation so far (without sending the entire history each time). This summary might include key details such as location or previous choices.
+- **Session Manager → MCP Server:**  
+  Returns a summary of the session that will help provide context for the current query.
 
-1. User selects a business and time slot
-2. Claude interprets this as a booking intent
-3. MCP server coordinates:
-   - Scheduler Service to reserve the time slot
-   - Transaction Service to create a booking record
-   - Notification Service to alert all parties
-4. Confirmation flows back to the user
+#### **4. Intent Detection**
 
-### 3. Payment Processing (Optional)
+- **MCP Server (S) → Intent Detection Tool (ID):**  
+  The system calls the `detect-intent` tool with the user's query.
+  - **Intent Detection Tool (ID):**  
+    Analyzes the text of the query (using embeddings or custom logic) to determine what the user wants to do. In this case, it recognizes the intent as "booking:plumber."
+- **Intent Detection Tool → MCP Server:**  
+  Returns the detected intent.
 
-A supplementary flow for handling payments:
+#### **5. Query Validation**
 
-1. User provides payment information
-2. Transaction Service securely stores payment method
-3. User receives confirmation
+- **MCP Server (S) → Query Validator (DV):**  
+  The system then validates the query by checking factors like correct location (Beeramguda) and syntax.
+  - **Query Validator (DV):**  
+    Confirms that the request is applicable and matches your service area.
+- **Query Validator → MCP Server:**  
+  Returns a validation response, confirming the query is valid (e.g., “Beeramguda confirmed”).
 
-## Key Interactions
+#### **6. Data Retrieval – Fetching Providers**
 
-The diagram highlights several important system characteristics:
+- **MCP Server (S) → Fetch Providers Tool (FP):**  
+  With a valid query and the confirmed location, the MCP Server calls the `fetch-providers` tool to retrieve a list of plumbers in Beeramguda from your database.
+  - **Fetch Providers Tool (FP):**  
+    Interacts with the database and returns a raw list of plumbers available in the area.
+- **Fetch Providers Tool → MCP Server:**  
+  Returns the list of available plumbers.
 
-1. **Claude as the Conversation Manager**: Claude interprets user intent and formats responses, but delegates data operations to the MCP server
-2. **MCP as the Orchestrator**: The MCP server coordinates between multiple services rather than Claude directly accessing each service
-3. **Service Independence**: Each service has a specific responsibility, making the system modular and maintainable
-4. **Bidirectional Flow**: Information flows both ways through the system, with each component transforming data appropriately for the next
+#### **7. Filtering & Sorting the Results**
 
-This sequence flow represents a complete conversation from search to booking confirmation, showing how the various architectural components work together to deliver a seamless user experience.
+- **MCP Server (S) → Filter & Sort Tool (FS):**  
+  The raw list might be too large or unorganized. The system then calls the `filter-and-sort` tool.
+  - **Filter & Sort Tool (FS):**  
+    Filters out providers without available slots and sorts the remaining ones based on criteria like review ratings.
+- **Filter & Sort Tool → MCP Server:**  
+  Returns the top 3 providers (e.g., Plumber A, B, and C) along with details such as available time slots.
 
-## How to handle the variability in how users express their needs. It's indeed one of the hardest problems in search that even Google continues to refine. Here's how your platform with Claude can address this challenge:
+#### **8. Generating a Response for the User**
 
-## How Claude Handles Varied Service Requests
+- **MCP Server (S) → Prompt Generator (PR):**  
+  The MCP Server calls the `format-response` prompt to generate a natural language message that summarizes the options and asks a clarifying question.
+  - **Prompt Generator (PR):**  
+    Uses an LLM (like GPT-4o-mini) to convert the technical data into a friendly message.  
+    For example:  
+    _"We found 3 plumbers available: Plumber A (10AM), Plumber B (11AM), Plumber C (12PM). Would you like to book one? Please specify your preferred time."_
+- **Prompt Generator → MCP Server:**  
+  Returns the formatted message.
 
-1. **Natural Language Understanding**
-   Claude has strong semantic understanding capabilities that allow it to recognize that "fix leaky pipe," "person for leakage," and "plumber" all refer to similar service needs. This is fundamentally different from keyword matching that traditional search engines rely on.
-2. **Service Taxonomy & Mappings**
-   Your MCP server should maintain a rich taxonomy of services with: - Primary service categories (plumbing, HVAC, electrical, etc.) - Common tasks within each category (fix leaks, install fixtures) - Alternative terms and phrases ("AC technician" = "air conditioning repair") - Regional language variations
-3. **Clarification Through Conversation**
-   Unlike traditional search where a bad query means bad results: - Claude can ask clarifying questions: "It sounds like you need help with a leaking pipe. Is that correct?" - Users can correct misunderstandings in natural conversation - The system learns from these interactions
+#### **9. Sending the Options to the User**
 
-## Implementation Approach
+- **MCP Server (S) → Express Server (E):**  
+  The MCP Server sends the formatted response back to the Express Server.
+- **Express Server (E) → User (U):**  
+  The Express Server relays the message to the user.
 
-Here's how to build this into your platform:
+#### **10. User Makes a Selection**
 
-1. **Service Classification Model**
-   - Train Claude (via prompt engineering) to map user requests to your service taxonomy
-   - Your MCP can include a specific endpoint like `classifyServiceRequest` that translates natural language to structured service categories
-2. **Synonym Expansion**
-   - In your search service, implement synonym expansion for service terms
-   - For example, "AC technician," "air conditioning repair," and "cooling system specialist" should all map to the same service category
-3. **Contextual Understanding**
-   - Use conversation history to build context
-   - If a user previously mentioned a bathroom, a subsequent mention of "leakage" is more likely plumbing-related
-4. **User Feedback Loop**
-   - Track which businesses users ultimately engage with after various queries
-   - Use this data to improve your service mappings
-   - Capture explicit corrections (user says "No, I meant window AC unit, not central air")
-5. **Location-Specific Language**
-   - Different regions use different terms for the same services
-   - Build regional variations into your service taxonomy
+- **User (U):**  
+  The user responds with their choice, e.g., _"I choose Plumber B at 11AM."_
+- **Express Server (E):**  
+  Forwards the booking confirmation details back to the MCP Server.
 
-The key advantage your platform has over traditional search engines is the conversational nature - Claude doesn't have to get it right on the first try. It can engage in a quick clarification dialogue that feels natural to users while ensuring they get exactly what they need.
+#### **11. Finalizing the Booking**
 
-This approach combines the best of AI language understanding with structured data in a way that traditional search engines can't match, creating a more intuitive and effective user experience.
+- **MCP Server (S) → Book Provider Tool (BP):**  
+  The MCP Server now calls the `book-provider` tool with the selected provider (Plumber B) and the chosen time slot (11AM).
+  - **Book Provider Tool (BP):**  
+    Updates the database to reserve the time slot, and may also trigger notifications (e.g., to the plumber and the user).
+- **Book Provider Tool → MCP Server:**  
+  Returns a confirmation that the booking is complete.
+
+#### **12. Confirming the Booking with the User**
+
+- **MCP Server (S) → Prompt Generator (PR):**  
+  Calls the `confirm-booking-response` prompt to generate a final confirmation message.
+  - **Prompt Generator (PR):**  
+    Formats a message like, _"Your appointment with Plumber B at 11AM is confirmed."_
+- **Prompt Generator → MCP Server:**  
+  Returns the confirmation message.
+- **MCP Server (S) → Express Server (E):**  
+  Sends the final message to the Express Server.
+- **Express Server (E) → User (U):**  
+  The final confirmation is delivered to the user.
+
+---
+
+### Explaining to Non-Technical Staff
+
+Imagine you’re running a service desk:
+
+1. **A Customer’s Request:**  
+   A customer calls in and says, _"I need to book a plumber."_
+2. **Reception Desk (Express Server):**  
+   The receptionist takes note of the call and sends the request along with the customer’s details (session ID) to a specialized team (MCP Server).
+
+3. **Checking Past Interactions (Session Manager):**  
+   The team checks the customer’s previous interactions to quickly understand the context without having to review all past conversations.
+
+4. **Understanding the Request (Intent Detection):**  
+   The team analyzes the request and determines that the customer wants to book a plumber.
+
+5. **Validating the Request (Query Validator):**  
+   The team confirms that the request is valid and that it applies to the correct location (Beeramguda).
+
+6. **Finding Available Plumbers (Fetch Providers):**  
+   The team then looks up a list of available plumbers in Beeramguda from their records.
+
+7. **Refining the List (Filter & Sort):**  
+   They filter the list to show only those who are available and rank them based on quality (reviews, available time slots).
+
+8. **Offering Choices (Prompt Generator):**  
+   The team prepares a friendly message for the customer, saying something like:  
+   _"We found 3 plumbers available: Plumber A at 10AM, Plumber B at 11AM, and Plumber C at 12PM. Which one would you like to book?"_
+
+9. **Customer Chooses:**  
+   The customer selects Plumber B at 11AM.
+
+10. **Final Booking (Book Provider):**  
+    The team then finalizes the booking by updating their schedule and sends a confirmation back to the customer:  
+    _"Your appointment with Plumber B at 11AM is confirmed."_
+
+Each step is handled by a specific part of the system, ensuring that the conversation is efficient, context is maintained, and the right actions are taken without burdening the customer with too much information.
+
+---
+
+This detailed breakdown and diagram illustrate how your system efficiently manages everything—from understanding the request to confirming the booking—using a modular, step-by-step process that minimizes unnecessary data transfer while still providing a smooth, human-like conversation.
